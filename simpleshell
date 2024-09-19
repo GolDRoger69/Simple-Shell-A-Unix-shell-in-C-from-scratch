@@ -1,0 +1,253 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <fcntl.h>
+
+#define BUFFER_SIZE 1024
+#define HISTORY_SIZE 100
+#define MAX_PIPES 10
+
+typedef struct {
+    char* command;
+    pid_t pid;
+    time_t start_time;
+    double duration;
+} HistoryEntry;
+
+HistoryEntry history[HISTORY_SIZE];
+int history_count = 0;
+
+// Function prototypes
+char *read_line(void);
+char **split_line(char *line);
+int launch(char **args);
+int execute_piped_commands(char ***commands, int num_commands);
+int execute(char **args);
+void simple_shell_loop(void);
+
+char *read_line(void) {
+    char *line = NULL;
+    size_t bufsize = 0;
+    getline(&line, &bufsize, stdin);
+    return line;
+}
+
+char **split_line(char *line) {
+    int bufsize = BUFFER_SIZE, position = 0;
+    char **tokens = malloc(bufsize * sizeof(char*));
+    char *token;
+
+    if (!tokens) {
+        fprintf(stderr, "simple-shell: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    token = strtok(line, " \t\r\n\a");
+    while (token != NULL) {
+        tokens[position] = token;
+        position++;
+
+        if (position >= bufsize) {
+            bufsize += BUFFER_SIZE;
+            tokens = realloc(tokens, bufsize * sizeof(char*));
+            if (!tokens) {
+                fprintf(stderr, "simple-shell: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        token = strtok(NULL, " \t\r\n\a");
+    }
+    tokens[position] = NULL;
+    return tokens;
+}
+
+int launch(char **args) {
+    pid_t pid;
+    int status;
+    time_t start_time, end_time;
+
+    pid = fork();
+    if (pid == 0) {
+        // Child process
+        if (execvp(args[0], args) == -1) {
+            perror("simple-shell");
+        }
+        exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+        // Error forking
+        perror("simple-shell");
+    } else {
+        // Parent process
+        time(&start_time);
+        do {
+            waitpid(pid, &status, WUNTRACED);
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        time(&end_time);
+
+        // Add to history
+        if (history_count < HISTORY_SIZE) {
+            history[history_count].command = strdup(args[0]);
+            history[history_count].pid = pid;
+            history[history_count].start_time = start_time;
+            history[history_count].duration = difftime(end_time, start_time);
+            history_count++;
+        }
+    }
+
+    return 1;
+}
+
+int execute_piped_commands(char ***commands, int num_commands) {
+    int i;
+    int prev_pipe[2];
+    int curr_pipe[2];
+    pid_t pid;
+    time_t start_time, end_time;
+
+    time(&start_time);
+
+    for (i = 0; i < num_commands; i++) {
+        if (i < num_commands - 1) {
+            if (pipe(curr_pipe) == -1) {
+                perror("simple-shell");
+                return 1;
+            }
+        }
+
+        pid = fork();
+        if (pid == -1) {
+            perror("simple-shell");
+            return 1;
+        } else if (pid == 0) {
+            // Child process
+            if (i > 0) {
+                // Not the first command, read input from previous pipe
+                dup2(prev_pipe[0], STDIN_FILENO);
+                close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+            if (i < num_commands - 1) {
+                // Not the last command, set up output to current pipe
+                dup2(curr_pipe[1], STDOUT_FILENO);
+                close(curr_pipe[0]);
+                close(curr_pipe[1]);
+            }
+
+            if (execvp(commands[i][0], commands[i]) == -1) {
+                perror("simple-shell");
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            // Parent process
+            if (i > 0) {
+                close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+            if (i < num_commands - 1) {
+                prev_pipe[0] = curr_pipe[0];
+                prev_pipe[1] = curr_pipe[1];
+            }
+        }
+    }
+
+    // Wait for all child processes to finish
+    for (i = 0; i < num_commands; i++) {
+        wait(NULL);
+    }
+
+    time(&end_time);
+
+    // Add to history (only the first command for simplicity)
+    if (history_count < HISTORY_SIZE) {
+        history[history_count].command = strdup(commands[0][0]);
+        history[history_count].pid = pid;
+        history[history_count].start_time = start_time;
+        history[history_count].duration = difftime(end_time, start_time);
+        history_count++;
+    }
+
+    return 1;
+}
+
+int execute(char **args) {
+    if (args[0] == NULL) {
+        // An empty command was entered.
+        return 1;
+    }
+
+    // Check for built-in commands
+    if (strcmp(args[0], "exit") == 0) {
+        return 0;
+    } else if (strcmp(args[0], "history") == 0) {
+        for (int i = 0; i < history_count; i++) {
+            printf("%d: %s\n", i + 1, history[i].command);
+        }
+        return 1;
+    }
+
+    // Check for pipes
+    char ***commands = malloc(MAX_PIPES * sizeof(char **));
+    int num_commands = 0;
+    int start = 0;
+
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], "|") == 0) {
+            args[i] = NULL;
+            commands[num_commands] = &args[start];
+            num_commands++;
+            start = i + 1;
+        }
+    }
+    commands[num_commands] = &args[start];
+    num_commands++;
+
+    int result;
+    if (num_commands > 1) {
+        result = execute_piped_commands(commands, num_commands);
+    } else {
+        // No pipes, execute as before
+        result = launch(args);
+    }
+
+    free(commands);
+    return result;
+}
+
+void simple_shell_loop(void) {
+    char *line;
+    char **args;
+    int status;
+
+    do {
+        printf("simple-shell> ");
+        line = read_line();
+        args = split_line(line);
+        status = execute(args);
+
+        free(line);
+        free(args);
+    } while (status);
+}
+
+int main(int argc, char **argv) {
+    simple_shell_loop();
+
+    // Print history details on exit
+    printf("\nCommand execution details:\n");
+    for (int i = 0; i < history_count; i++) {
+        char time_str[26];
+        ctime_r(&history[i].start_time, time_str);
+        time_str[24] = '\0';  // Remove newline
+        printf("Command: %s, PID: %d, Start Time: %s, Duration: %.2f seconds\n",
+               history[i].command, history[i].pid, time_str, history[i].duration);
+        free(history[i].command);
+    }
+
+    return EXIT_SUCCESS;
+}
