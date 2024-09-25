@@ -6,44 +6,44 @@
 #include <time.h>
 #include <signal.h>
 
-#define MAX_COMMAND_LENGTH 1024
+#define MAX_CMD_L 1024
 #define MAX_ARGS 1024
-#define MAX_HISTORY 1024
+#define MAX_H 1024
 
 #define ERROR(msg) do { printf("%s\n", msg); } while(0)
 
 // Struct to store each history entry
 typedef struct{
-    char cmd[MAX_COMMAND_LENGTH];
+    char cmd[MAX_CMD_L];
     pid_t pid;
     time_t strt_t;
     double dur;
 }his_entry;
 
-his_entry his[MAX_HISTORY];
+his_entry his[MAX_H];
 int his_c = 0;
 
 void store_h(char *cmd, pid_t pid, time_t strt_t, double dur){
-    if (his_c < MAX_HISTORY) {
-        strncpy(his[his_c].cmd, cmd, MAX_COMMAND_LENGTH - 1);
-        his[his_c].pid = pid;
-        his[his_c].strt_t = strt_t;
-        his[his_c].dur = dur;
+    if (his_c < MAX_H){
+        strncpy(his[his_c].cmd, cmd, MAX_CMD_L - 1);
+        his[his_c].pid = pid, 
+        his[his_c].strt_t = strt_t, 
+        his[his_c].dur = dur, 
         his_c++;
     }
     else{
-        for (int i = 1; i < MAX_HISTORY; i++) {
+        for (int i = 1; i < MAX_H; i++){
             his[i - 1] = his[i];
         }
-        strncpy(his[MAX_HISTORY - 1].cmd, cmd, MAX_COMMAND_LENGTH - 1);
-        his[MAX_HISTORY - 1].pid = pid;
-        his[MAX_HISTORY - 1].strt_t = strt_t;
-        his[MAX_HISTORY - 1].dur = dur;
+        strncpy(his[MAX_H - 1].cmd, cmd, MAX_CMD_L - 1);
+        his[MAX_H - 1].dur = dur;
+        his[MAX_H - 1].pid = pid;
+        his[MAX_H - 1].strt_t = strt_t;
     }
 }
 // Func. to Display history
-void print_h() {
-    for (int i = 0; i < his_c; i++) {
+void print_h(){
+    for (int i = 0; i < his_c; i++){
         printf("%d. %s [PID: %d] [Start: %s] [Duration: %.2lf seconds]\n",
                i + 1,
                his[i].cmd,
@@ -53,7 +53,7 @@ void print_h() {
     }
 }
 // Function to handle SIGINT (Ctrl+C)
-void ctrl_c(int sig_num) {
+void ctrl_c(int sig_num){
     printf("\nCaught Ctrl+C (SIGINT). Use 'y' to quit.\n");
     fflush(stdout);
 }
@@ -63,26 +63,25 @@ void exec_cmd(char *cmd, int fd_i, int fd_o){
     char *args[MAX_ARGS];
     int x = 0;
     char *t = strtok(cmd, " ");
-    while (t != NULL) {
+    while (t != NULL){
         args[x++] = t;
         t = strtok(NULL, " ");
     }
     args[x] = NULL;
 
-    if (fd_i != 0) {
+    if (fd_i != 0){
         dup2(fd_i, STDIN_FILENO);
         close(fd_i);
     }
-    if (fd_o != STDOUT_FILENO) {
+    if (fd_o != STDOUT_FILENO){
         dup2(fd_o, STDOUT_FILENO);
         close(fd_o);
     }
-    if (execvp(args[0], args) == -1) {
+    if (execvp(args[0], args) == -1){
         ERROR("failed in Executing");
         exit(EXIT_FAILURE);
     }
 }
-
 // Function to launch cmd with piping
 int run_cmd(char *cmd){
     char *org_cmd = strdup(cmd);
@@ -127,7 +126,8 @@ int run_cmd(char *cmd){
             free(org_cmd);
             return -1;
         }
-        else{  // Parent process
+        else{  
+            // Parent process
             close(fd[1]);
             if (fd_i != 0) {
                 close(fd_i);
@@ -153,20 +153,18 @@ int run_cmd(char *cmd){
         store_h(org_cmd, pid, strt_t, 0);
     }
 
-    void sigchld(int sig) {
-    // Wait for any child process without blocking
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-}
-
     // Free the original command copy
     free(org_cmd);
     return 1;
 }
-
+void sigchld(int sig){
+    // Wait for any child process without blocking
+    while (waitpid(-1, NULL, WNOHANG) > 0);
+}
 // Function to read a command from the user
 int read_cmd(char *cmd){
     printf("One-Piece Shell $$ >>");
-    if (fgets(cmd, MAX_COMMAND_LENGTH, stdin) == NULL) {
+    if (fgets(cmd, MAX_CMD_L, stdin) == NULL) {
         return -1; // Error or EOF
     }
     // Remove the newline character from the input
@@ -175,7 +173,7 @@ int read_cmd(char *cmd){
 }
 // Main loop of the shell
 int main(){
-    char cmd[MAX_COMMAND_LENGTH];
+    char cmd[MAX_CMD_L];
     signal(SIGCHLD, sigchld); 
     signal(SIGINT, ctrl_c);
     while (1){
