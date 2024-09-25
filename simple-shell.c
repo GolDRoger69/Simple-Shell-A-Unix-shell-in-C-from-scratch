@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <signal.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <unistd.h>
 
 #define MAX_CMD_L 1024
 #define MAX_ARGS 1024
@@ -14,7 +14,7 @@
 
 // Struct to store each history entry
 typedef struct{
-    char cmd[MAX_CMD_L];
+    char luffy_cmd[MAX_CMD_L];
     pid_t pid;
     time_t strt_t;
     double dur;
@@ -23,9 +23,9 @@ typedef struct{
 his_entry his[MAX_H];
 int his_c = 0;
 
-void store_h(char *cmd, pid_t pid, time_t strt_t, double dur){
+void store_h(char *luffy_cmd, pid_t pid, time_t strt_t, double dur){
     if (his_c < MAX_H){
-        strncpy(his[his_c].cmd, cmd, MAX_CMD_L - 1);
+        strncpy(his[his_c].luffy_cmd, luffy_cmd, MAX_CMD_L - 1);
         his[his_c].pid = pid, 
         his[his_c].strt_t = strt_t, 
         his[his_c].dur = dur, 
@@ -35,7 +35,7 @@ void store_h(char *cmd, pid_t pid, time_t strt_t, double dur){
         for (int i = 1; i < MAX_H; i++){
             his[i - 1] = his[i];
         }
-        strncpy(his[MAX_H - 1].cmd, cmd, MAX_CMD_L - 1);
+        strncpy(his[MAX_H - 1].luffy_cmd, luffy_cmd, MAX_CMD_L - 1);
         his[MAX_H - 1].dur = dur;
         his[MAX_H - 1].pid = pid;
         his[MAX_H - 1].strt_t = strt_t;
@@ -46,28 +46,28 @@ void print_h(){
     for (int i = 0; i < his_c; i++){
         printf("%d. %s [PID: %d] [Start: %s] [Duration: %.2lf seconds]\n",
                i + 1,
-               his[i].cmd,
+               his[i].luffy_cmd,
                his[i].pid,
                ctime(&(his[i].strt_t)),
                his[i].dur);
     }
 }
-// Function to handle SIGINT (Ctrl+C)
+// Func. to handle Ctrl+C
 void ctrl_c(int sig_num){
     printf("\nCaught Ctrl+C (SIGINT). Use 'y' to quit.\n");
     fflush(stdout);
 }
 
-// Function to execute a single command
-void exec_cmd(char *cmd, int fd_i, int fd_o){
-    char *args[MAX_ARGS];
+// Func. to execute a single command
+void exec_cmd(char *luffy_cmd, int fd_i, int fd_o){
+    char *zoro_args[MAX_ARGS];
     int x = 0;
-    char *t = strtok(cmd, " ");
+    char *t = strtok(luffy_cmd, " ");
     while (t != NULL){
-        args[x++] = t;
+        zoro_args[x++] = t;
         t = strtok(NULL, " ");
     }
-    args[x] = NULL;
+    zoro_args[x] = NULL;
 
     if (fd_i != 0){
         dup2(fd_i, STDIN_FILENO);
@@ -77,27 +77,27 @@ void exec_cmd(char *cmd, int fd_i, int fd_o){
         dup2(fd_o, STDOUT_FILENO);
         close(fd_o);
     }
-    if (execvp(args[0], args) == -1){
+    if (execvp(zoro_args[0], zoro_args) == -1){
         ERROR("failed in Executing");
         exit(EXIT_FAILURE);
     }
 }
-// Function to launch cmd with piping
-int run_cmd(char *cmd){
-    char *org_cmd = strdup(cmd);
+// Func. to launch commands with piping
+int run_luffy_cmd(char *luffy_cmd){
+    char *org_cmd = strdup(luffy_cmd);
     if (!org_cmd){
         ERROR("Failed to allocate memory for command copy");
         return -1;
     }
-    int back = 0;
-    // Check if the cmd ends with '&' for background execution
-    if (cmd[strlen(cmd) - 1] == '&') {
-        back = 1;
-        cmd[strlen(cmd) - 1] = '\0'; // Remove '&' from command
+    int sanji_bg = 0;
+    // Check if the Commands ends with '&' for background execution
+    if (luffy_cmd[strlen(luffy_cmd) - 1] == '&') {
+        sanji_bg = 1;
+        luffy_cmd[strlen(luffy_cmd) - 1] = '\0'; // Remove '&' from command
     }
 
     // Check if command is "history"
-    if (strcmp(cmd, "his") == 0){
+    if (strcmp(luffy_cmd, "his") == 0){
         print_h();
         free(org_cmd);
         return 1;
@@ -106,7 +106,7 @@ int run_cmd(char *cmd){
     // Tokenize by pipes
     char *cmds[MAX_ARGS];
     int n_cmd = 0;
-    char *t = strtok(cmd, "|");
+    char *t = strtok(luffy_cmd, "|");
     while (t != NULL){
         cmds[n_cmd++] = t;
         t = strtok(NULL, "|");
@@ -136,7 +136,7 @@ int run_cmd(char *cmd){
         }
     }
 
-    if (!back){
+    if (!sanji_bg){
         // Wait for the last child and record his for foreground process
         time_t strt_t = time(NULL);
         int sts;
@@ -161,30 +161,30 @@ void sigchld(int sig){
     // Wait for any child process without blocking
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
-// Function to read a command from the user
-int read_cmd(char *cmd){
+// Func. to read a command from the user
+int read_cmd(char *luffy_cmd){
     printf("One-Piece Shell $$ >>");
-    if (fgets(cmd, MAX_CMD_L, stdin) == NULL) {
+    if (fgets(luffy_cmd, MAX_CMD_L, stdin) == NULL) {
         return -1; // Error or EOF
     }
     // Remove the newline character from the input
-    cmd[strcspn(cmd, "\n")] = '\0';
+    luffy_cmd[strcspn(luffy_cmd, "\n")] = '\0';
     return 0;
 }
 // Main loop of the shell
 int main(){
-    char cmd[MAX_CMD_L];
+    char luffy_cmd[MAX_CMD_L];
     signal(SIGCHLD, sigchld); 
     signal(SIGINT, ctrl_c);
     while (1){
-        if (read_cmd(cmd) == -1){
+        if (read_cmd(luffy_cmd) == -1){
             break;
         }
         // Exit on "y" command
-        if (strcmp(cmd, "y") == 0){
+        if (strcmp(luffy_cmd, "y") == 0){
             break;
         }
-        run_cmd(cmd);
+        run_luffy_cmd(luffy_cmd);
     }
     return 0;
 }
